@@ -1,0 +1,5 @@
+# optimized build is the default
+build --config=opt
+
+# build with optimizations enabled
+build:opt -c opt

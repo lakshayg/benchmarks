@@ -1,0 +1,116 @@
+/*
+ * Code taken from https://paulcavallaro.com/blog/common-systems-programming-optimizations-tricks/
+ */
+
+#include "absl/synchronization/notification.h"
+#include "benchmark/benchmark.h"
+
+#include <iostream>
+
+// NormalCounters is straight forward naive implementation of a struct of
+// counters.
+// Note: We also use ABSL_CACHELINE_ALIGNED on the NormalCounters struct, but
+// not its members, so that the entire struct will be aligned to a cache line.
+// Otherwise the struct might be placed towards the end of a cache line,
+// accidentally straddling two cache lines, thereby improving its performance.
+struct ABSL_CACHELINE_ALIGNED NormalCounters {
+  std::atomic<int64_t> success{0};
+  std::atomic<int64_t> failure{0};
+  std::atomic<int64_t> okay{0};
+  std::atomic<int64_t> meh{0};
+};
+
+// CacheLineAwareCounters forces each counter onto a separate cache line to
+// avoid any false sharing between the counters.
+// Note: We must use ABSL_CACHELINE_ALIGNED for each member, since we want to
+// pad every single counter so it will be forced onto its own separate cache
+// line.
+struct ABSL_CACHELINE_ALIGNED CacheLineAwareCounters {
+  ABSL_CACHELINE_ALIGNED std::atomic<int64_t> success{0};
+  ABSL_CACHELINE_ALIGNED std::atomic<int64_t> failure{0};
+  ABSL_CACHELINE_ALIGNED std::atomic<int64_t> okay{0};
+  ABSL_CACHELINE_ALIGNED std::atomic<int64_t> meh{0};
+};
+
+namespace sysprog {
+namespace {
+
+template <typename T>
+std::atomic<int64_t>* getCounter(T& counters, int i) {
+  switch (i) {
+    case 0:
+      return &counters.success;
+    case 1:
+      return &counters.failure;
+    case 2:
+      return &counters.okay;
+    case 3:
+      return &counters.meh;
+    default:
+      return nullptr;
+  }
+}
+
+static_assert(
+    sizeof(NormalCounters) != sizeof(CacheLineAwareCounters),
+    "NormalCounters and CacheLineAwareCounters should have different sizes due "
+    "to aligning members to different cache lines -- otherwise benchmarks will "
+    "not show the difference in performance.");
+
+constexpr int64_t kNumIncrements = int64_t{1} << 16;
+
+void BM_NormalCounters(benchmark::State& state) {
+  // Make the counters static so that each thread will use the same counters.
+  static NormalCounters counters;
+  std::atomic<int64_t>* counter = getCounter(counters, state.thread_index);
+  *counter = 0;
+  for (auto _ : state) {
+    for (int64_t i = 0; i < kNumIncrements; i++) {
+      (*counter)++;
+    }
+  }
+  benchmark::DoNotOptimize(*counter);
+}
+
+void BM_CacheLineAwareCounters(benchmark::State& state) {
+  // Make the counters static so that each thread will use the same counters.
+  static CacheLineAwareCounters counters;
+  std::atomic<int64_t>* counter = getCounter(counters, state.thread_index);
+  *counter = 0;
+  for (auto _ : state) {
+    for (int64_t i = 0; i < kNumIncrements; i++) {
+      (*counter)++;
+    }
+  }
+  benchmark::DoNotOptimize(*counter);
+}
+
+// Try running with 1, 2, 3, and then 4 threads all bumping separate counters in
+// the given counters struct
+BENCHMARK(BM_NormalCounters)
+    ->Threads(1)
+    ->Threads(2)
+    ->Threads(3)
+    ->Threads(4)
+    ->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_CacheLineAwareCounters)
+    ->Threads(1)
+    ->Threads(2)
+    ->Threads(3)
+    ->Threads(4)
+    ->Unit(benchmark::kMicrosecond);
+
+}  // namespace
+}  // namespace sysprog
+
+int main(int argc, char** argv) {
+  std::cerr << "Cache Line Size: " << ABSL_CACHELINE_SIZE << std::endl;
+  std::cerr << "sizeof(NormalCounters) = " << sizeof(NormalCounters)
+            << std::endl;
+  std::cerr << "sizeof(CacheLineAwareCounters) = "
+            << sizeof(CacheLineAwareCounters) << std::endl;
+  ::benchmark::Initialize(&argc, argv);
+  if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
+  ::benchmark::RunSpecifiedBenchmarks();
+  return 0;
+}

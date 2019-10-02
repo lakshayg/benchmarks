@@ -1,116 +1,75 @@
-/*
- * Code taken from https://paulcavallaro.com/blog/common-systems-programming-optimizations-tricks/
- */
+// Reference:
+// * https://paulcavallaro.com/blog/common-systems-programming-optimizations-tricks/
+// * https://igoro.com/archive/gallery-of-processor-cache-effects/
 
-#include "absl/synchronization/notification.h"
 #include "benchmark/benchmark.h"
-
+#include "glog/logging.h"
 #include <iostream>
 
-// NormalCounters is straight forward naive implementation of a struct of
-// counters.
-// Note: We also use ABSL_CACHELINE_ALIGNED on the NormalCounters struct, but
-// not its members, so that the entire struct will be aligned to a cache line.
-// Otherwise the struct might be placed towards the end of a cache line,
-// accidentally straddling two cache lines, thereby improving its performance.
-struct ABSL_CACHELINE_ALIGNED NormalCounters {
-  std::atomic<int64_t> success{0};
-  std::atomic<int64_t> failure{0};
-  std::atomic<int64_t> okay{0};
-  std::atomic<int64_t> meh{0};
-};
-
-// CacheLineAwareCounters forces each counter onto a separate cache line to
-// avoid any false sharing between the counters.
-// Note: We must use ABSL_CACHELINE_ALIGNED for each member, since we want to
-// pad every single counter so it will be forced onto its own separate cache
-// line.
-struct ABSL_CACHELINE_ALIGNED CacheLineAwareCounters {
-  ABSL_CACHELINE_ALIGNED std::atomic<int64_t> success{0};
-  ABSL_CACHELINE_ALIGNED std::atomic<int64_t> failure{0};
-  ABSL_CACHELINE_ALIGNED std::atomic<int64_t> okay{0};
-  ABSL_CACHELINE_ALIGNED std::atomic<int64_t> meh{0};
-};
-
-namespace sysprog {
-namespace {
-
-template <typename T>
-std::atomic<int64_t>* getCounter(T& counters, int i) {
-  switch (i) {
-    case 0:
-      return &counters.success;
-    case 1:
-      return &counters.failure;
-    case 2:
-      return &counters.okay;
-    case 3:
-      return &counters.meh;
-    default:
-      return nullptr;
-  }
-}
-
-static_assert(
-    sizeof(NormalCounters) != sizeof(CacheLineAwareCounters),
-    "NormalCounters and CacheLineAwareCounters should have different sizes due "
-    "to aligning members to different cache lines -- otherwise benchmarks will "
-    "not show the difference in performance.");
+#include "counter.h"
 
 constexpr int64_t kNumIncrements = int64_t{1} << 16;
 
-void BM_NormalCounters(benchmark::State& state) {
-  // Make the counters static so that each thread will use the same counters.
-  static NormalCounters counters;
-  std::atomic<int64_t>* counter = getCounter(counters, state.thread_index);
-  *counter = 0;
+template <typename Counters>
+void IncrementCounters(benchmark::State& state) {
+  // Setup for benchmark
+  static Counters counters; // static so all threads use the same counter
+  const int thread_idx = state.thread_index;
+  CHECK_LT(thread_idx, Counters::num_counters);
+  counters.set(thread_idx, 0);
+
+  // Benchmark
   for (auto _ : state) {
-    for (int64_t i = 0; i < kNumIncrements; i++) {
-      (*counter)++;
+    for (int64_t i = 0; i < kNumIncrements; ++i) {
+      counters.inc(thread_idx);
+      benchmark::ClobberMemory();
     }
   }
-  benchmark::DoNotOptimize(*counter);
+
+  // Ensure that the benchmark did what we expected
+  auto expected_count = state.iterations()  * kNumIncrements;
+  CHECK_EQ(counters.get(thread_idx), expected_count);
 }
 
-void BM_CacheLineAwareCounters(benchmark::State& state) {
-  // Make the counters static so that each thread will use the same counters.
-  static CacheLineAwareCounters counters;
-  std::atomic<int64_t>* counter = getCounter(counters, state.thread_index);
-  *counter = 0;
-  for (auto _ : state) {
-    for (int64_t i = 0; i < kNumIncrements; i++) {
-      (*counter)++;
-    }
-  }
-  benchmark::DoNotOptimize(*counter);
-}
+#define REGISTER_BENCHMARK_FOR(CounterType)                   \
+  BENCHMARK_TEMPLATE(IncrementCounters, CounterType)          \
+    ->Threads(1)                                              \
+    ->Threads(2)                                              \
+    ->Threads(3)                                              \
+    ->Threads(4)                                              \
+    ->Threads(5)                                              \
+    ->Threads(6)                                              \
+    ->Threads(7)                                              \
+    ->Threads(8)                                              \
+    ->Unit(benchmark::kMicrosecond)
 
-// Try running with 1, 2, 3, and then 4 threads all bumping separate counters in
-// the given counters struct
-BENCHMARK(BM_NormalCounters)
-    ->Threads(1)
-    ->Threads(2)
-    ->Threads(3)
-    ->Threads(4)
-    ->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_CacheLineAwareCounters)
-    ->Threads(1)
-    ->Threads(2)
-    ->Threads(3)
-    ->Threads(4)
-    ->Unit(benchmark::kMicrosecond);
+constexpr int kMaxThreads = 8;
 
-}  // namespace
-}  // namespace sysprog
+using SimpleCounter_Int = lg::SimpleCounter<size_t, kMaxThreads>;
+REGISTER_BENCHMARK_FOR(SimpleCounter_Int);
+
+using CacheLineAwareCounter_Int = lg::CacheLineAwareCounter<size_t, kMaxThreads>;
+REGISTER_BENCHMARK_FOR(CacheLineAwareCounter_Int);
+
+using SimpleCounter_AtomicInt = lg::SimpleCounter<std::atomic_int, kMaxThreads>;
+REGISTER_BENCHMARK_FOR(SimpleCounter_AtomicInt);
+
+using CacheLineAwareCounter_AtomicInt = lg::CacheLineAwareCounter<std::atomic_int, kMaxThreads>;
+REGISTER_BENCHMARK_FOR(CacheLineAwareCounter_AtomicInt);
 
 int main(int argc, char** argv) {
-  std::cerr << "Cache Line Size: " << ABSL_CACHELINE_SIZE << std::endl;
-  std::cerr << "sizeof(NormalCounters) = " << sizeof(NormalCounters)
-            << std::endl;
-  std::cerr << "sizeof(CacheLineAwareCounters) = "
-            << sizeof(CacheLineAwareCounters) << std::endl;
-  ::benchmark::Initialize(&argc, argv);
-  if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
-  ::benchmark::RunSpecifiedBenchmarks();
+  FLAGS_logtostderr=1;
+  google::InitGoogleLogging(argv[0]);
+  google::InstallFailureSignalHandler();
+
+  LOG(INFO) << "Cache line size: " << ABSL_CACHELINE_SIZE;
+  LOG(INFO) << "sizeof(SimpleCounter_Int) = " << sizeof(SimpleCounter_Int);
+  LOG(INFO) << "sizeof(CacheLineAwareCounter_Int) = " << sizeof(CacheLineAwareCounter_Int);
+  LOG(INFO) << "sizeof(SimpleCounter_AtomicInt) = " << sizeof(SimpleCounter_AtomicInt);
+  LOG(INFO) << "sizeof(CacheLineAwareCounter_AtomicInt) = " << sizeof(CacheLineAwareCounter_AtomicInt);
+
+  benchmark::Initialize(&argc, argv);
+  if (benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
+  benchmark::RunSpecifiedBenchmarks();
   return 0;
 }

@@ -26,8 +26,12 @@ http_archive(
     strip_prefix = "gflags-2.2.2",
 )
 
+# Cannot use the release v0.4.0 because it does not print stack traces
+# properly when built using bazel. The fix is not a part of the release
+# https://github.com/google/glog/pull/347
 http_archive(
     name = "glog",
-    urls = ["https://github.com/google/glog/archive/v0.4.0.zip"],
-    strip_prefix = "glog-0.4.0",
+    urls = ["https://github.com/google/glog/archive/6ca3d3cf5878020ebed7239139d6cd229a1e7edb.zip"],
+    sha256 = "e94a39c4ac6fab6fdf75b37201e0333dce7fbd996e3f9c4337136ea2ecb634fc",
+    strip_prefix = "glog-6ca3d3cf5878020ebed7239139d6cd229a1e7edb",
 )

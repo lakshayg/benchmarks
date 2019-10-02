@@ -58,6 +58,14 @@ REGISTER_BENCHMARK_FOR(SimpleCounter_AtomicInt);
 using CacheLineAwareCounter_AtomicInt = lg::CacheLineAwareCounter<std::atomic_int, kMaxThreads>;
 REGISTER_BENCHMARK_FOR(CacheLineAwareCounter_AtomicInt);
 
+#define ERROR_MESSAGE                                                             \
+    "SimpleCounter and CacheLineAwareCounter should have different sizes due "    \
+    "to aligning members to different cache lines -- otherwise benchmarks will "  \
+    "not show the difference in performance."
+
+static_assert(sizeof(SimpleCounter_Int) != sizeof(CacheLineAwareCounter_Int), ERROR_MESSAGE);
+static_assert(sizeof(SimpleCounter_AtomicInt) != sizeof(CacheLineAwareCounter_AtomicInt), ERROR_MESSAGE);
+
 int main(int argc, char** argv) {
   LG_INIT_GLOG(argc, argv);
 

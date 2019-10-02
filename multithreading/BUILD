@@ -9,6 +9,7 @@ cc_binary(
     srcs = ["false_sharing.cpp"],
     deps = [
         ":counter",
+        "//base:init",
         "@google_benchmark//:benchmark",
         "@glog//:glog",
     ],

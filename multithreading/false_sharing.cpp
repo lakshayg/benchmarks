@@ -6,6 +6,7 @@
 #include "glog/logging.h"
 #include <iostream>
 
+#include "base/init.h"
 #include "counter.h"
 
 constexpr int64_t kNumIncrements = int64_t{1} << 16;
@@ -58,9 +59,7 @@ using CacheLineAwareCounter_AtomicInt = lg::CacheLineAwareCounter<std::atomic_in
 REGISTER_BENCHMARK_FOR(CacheLineAwareCounter_AtomicInt);
 
 int main(int argc, char** argv) {
-  FLAGS_logtostderr=1;
-  google::InitGoogleLogging(argv[0]);
-  google::InstallFailureSignalHandler();
+  LG_INIT_GLOG(argc, argv);
 
   LOG(INFO) << "Cache line size: " << ABSL_CACHELINE_SIZE;
   LOG(INFO) << "sizeof(SimpleCounter_Int) = " << sizeof(SimpleCounter_Int);
@@ -69,7 +68,8 @@ int main(int argc, char** argv) {
   LOG(INFO) << "sizeof(CacheLineAwareCounter_AtomicInt) = " << sizeof(CacheLineAwareCounter_AtomicInt);
 
   benchmark::Initialize(&argc, argv);
-  if (benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
+  if (benchmark::ReportUnrecognizedArguments(argc, argv)) {
+    return 1;
+  }
   benchmark::RunSpecifiedBenchmarks();
-  return 0;
 }

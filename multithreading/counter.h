@@ -55,7 +55,7 @@ class CacheLineAwareCounter {
  private:
   // All instances of AlignedCounter will be aligned to the cache line
   struct ABSL_CACHELINE_ALIGNED AlignedCounter {
-    CounterT counter{0};
+    CounterT counter{ 0 };
   };
 
   AlignedCounter counters[N] = {};

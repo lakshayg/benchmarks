@@ -14,6 +14,29 @@ http_archive(
     strip_prefix = "abseil-cpp-20190808",
 )
 
+# Gtest and its dependencies
+
+http_archive(
+    name = "rules_cc",
+    urls = ["https://github.com/bazelbuild/rules_cc/archive/master.zip"],
+    sha256 = "9197b22ba3f10ed8eede900ca9a4a5bead8fa62d31ca266e4e4b63544ac5021e",
+    strip_prefix = "rules_cc-master",
+)
+
+http_archive(
+    name = "rules_python",
+    urls = ["https://github.com/bazelbuild/rules_python/archive/master.zip"],
+    sha256 = "46517092c83222d93553c06555ab4af72435000b3c58feb276161fc03f4ac5e5",
+    strip_prefix = "rules_python-master",
+)
+
+http_archive(
+    name = "gtest",
+    urls = ["https://github.com/google/googletest/archive/release-1.10.0.zip"],
+    sha256 = "94c634d499558a76fa649edb13721dce6e98fb1e7018dfaeba3cd7a083945e91",
+    strip_prefix = "googletest-release-1.10.0",
+)
+
 # Glog and its deps
 
 http_archive(

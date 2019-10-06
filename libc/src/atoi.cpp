@@ -1,13 +1,9 @@
+#include "libc/ctype.h"
+#include "libc/stdlib.h"
+
 namespace lg {
-bool isnum(char c) {
-  return c >= '0' && c <= '9';
-}
 
-bool isspace(char c) {
-  return c == ' ';
-}
-
-inline int atoi(const char* str) {
+int atoi(const char* str) {
   if (str == nullptr) {
     return 0;
   }
@@ -29,4 +25,5 @@ inline int atoi(const char* str) {
   }
   return n;
 }
+
 } // namespace lg
